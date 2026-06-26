@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<!-- saved from url=(0054)file:///C:/Users/fusio/Downloads/gemini_translate.html -->
+<html lang="ko"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>실시간 번역</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #0f0f0f;
+    color: #f0f0f0;
+    padding: 1.2rem;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 1.2rem;
+    color: #fff;
+  }
+  .card {
+    background: #1c1c1e;
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1rem;
+    border: 0.5px solid #333;
+  }
+  label {
+    font-size: 12px;
+    color: #888;
+    display: block;
+    margin-bottom: 5px;
+    margin-top: 10px;
+  }
+  label:first-child { margin-top: 0; }
+  input[type="password"], select {
+    width: 100%;
+    background: #2c2c2e;
+    border: 0.5px solid #444;
+    border-radius: 8px;
+    color: #f0f0f0;
+    font-size: 15px;
+    padding: 10px 12px;
+    outline: none;
+    -webkit-appearance: none;
+  }
+  select { appearance: none; }
+  .hint { font-size: 11px; color: #555; margin-top: 5px; }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #888;
+  }
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #444;
+    flex-shrink: 0;
+  }
+  .dot.connected { background: #30d158; }
+  .dot.recording { background: #ff453a; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .transcript-box {
+    background: #111;
+    border: 0.5px solid #333;
+    border-radius: 10px;
+    padding: 1rem;
+    min-height: 200px;
+    max-height: 380px;
+    overflow-y: auto;
+    font-size: 16px;
+    line-height: 1.75;
+    color: #f0f0f0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .placeholder { color: #444; font-size: 14px; }
+  .entry { margin-bottom: 6px; }
+  .entry .ts { font-size: 11px; color: #555; margin-right: 6px; }
+  .btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  button {
+    padding: 12px 8px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #startBtn { background: #0a84ff; color: #fff; }
+  #startBtn:disabled { background: #1a3a5c; color: #666; }
+  #stopBtn { background: #2c2c2e; color: #ff453a; border: 0.5px solid #ff453a; }
+  #stopBtn:disabled { opacity: 0.3; }
+  #clearBtn { background: #2c2c2e; color: #888; }
+  .error { font-size: 12px; color: #ff453a; margin-top: 8px; min-height: 18px; }
+  .footer { text-align: center; font-size: 11px; color: #444; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<h1>실시간 번역</h1>
+
+<div class="card">
+  <label>Gemini API Key</label>
+  <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+  <div class="hint">키는 저장되지 않습니다.</div>
+
+  <label>번역 방향</label>
+  <select id="targetLang">
+    <option value="ko">영어 → 한국어</option>
+    <option value="en">한국어 → 영어</option>
+    <option value="ja">영어 → 일본어</option>
+    <option value="zh">영어 → 중국어</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="status-row">
+    <span class="dot" id="dot"></span>
+    <span id="statusText">대기 중</span>
+  </div>
+
+  <div class="transcript-box" id="box">
+    <span class="placeholder">번역 결과가 여기 표시됩니다.</span>
+  </div>
+
+  <div class="btn-row">
+    <button id="startBtn" onclick="startTranslation()">시작</button>
+    <button id="stopBtn" onclick="stopTranslation()" disabled="">중지</button>
+    <button id="clearBtn" onclick="clearAll()">지우기</button>
+  </div>
+  <div class="error" id="err"></div>
+</div>
+
+<div class="footer">음성 출력 없음 — 텍스트만 표시</div>
+
+<script>
+let ws = null, stream = null, actx = null, proc = null;
+
+function setStatus(type, text) {
+  document.getElementById('dot').className = 'dot' + (type ? ' ' + type : '');
+  document.getElementById('statusText').textContent = text;
+}
+function showErr(msg) { document.getElementById('err').textContent = msg; }
+function clearAll() {
+  document.getElementById('box').innerHTML = '<span class="placeholder">번역 결과가 여기 표시됩니다.</span>';
+}
+
+function addText(text) {
+  if (!text || !text.trim()) return;
+  const box = document.getElementById('box');
+  const ph = box.querySelector('.placeholder');
+  if (ph) ph.remove();
+  const now = new Date();
+  const ts = [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map(n => String(n).padStart(2,'0')).join(':');
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML = '<span class="ts">' + ts + '</span>' + text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function f32ToI16(buf) {
+  const out = new Int16Array(buf.length);
+  for (let i = 0; i < buf.length; i++) {
+    const s = Math.max(-1, Math.min(1, buf[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return out;
+}
+function toB64(i16) {
+  const bytes = new Uint8Array(i16.buffer);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+async function startTranslation() {
+  showErr('');
+  const key = document.getElementById('apiKey').value.trim();
+  if (!key) { showErr('API Key를 입력해주세요.'); return; }
+  const lang = document.getElementById('targetLang').value;
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    showErr('마이크 권한 필요: ' + e.message);
+    return;
+  }
+
+  setStatus('', '연결 중...');
+  document.getElementById('startBtn').disabled = true;
+
+  const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=' + key;
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      setup: {
+        model: 'models/gemini-3.5-live-translate-preview',
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
+          translationConfig: {
+            targetLanguageCode: lang,
+            echoTargetLanguage: false
+          }
+        }
+      }
+    }));
+    setStatus('connected', '연결됨');
+    document.getElementById('stopBtn').disabled = false;
+    startMic();
+  };
+
+  ws.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      const sc = d.serverContent;
+      if (!sc) return;
+      if (sc.outputTranscription && sc.outputTranscription.text) {
+        addText(sc.outputTranscription.text);
+      }
+    } catch(_) {}
+  };
+
+  ws.onerror = () => { showErr('연결 오류. API Key를 확인하세요.'); cleanup(); };
+  ws.onclose = (e) => {
+    if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ')');
+    cleanup();
+  };
+}
+
+function startMic() {
+  actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  const src = actx.createMediaStreamSource(stream);
+  proc = actx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = (e) => {
+    if (!ws || ws.readyState !== 1) return;
+    const b64 = toB64(f32ToI16(e.inputBuffer.getChannelData(0)));
+    ws.send(JSON.stringify({ realtimeInput: { audio: { data: b64, mimeType: 'audio/pcm;rate=16000' } } }));
+  };
+  src.connect(proc);
+  proc.connect(actx.destination);
+  setStatus('recording', '녹음 중');
+}
+
+function cleanup() {
+  if (proc) { try { proc.disconnect(); } catch(_){} proc = null; }
+  if (actx) { try { actx.close(); } catch(_){} actx = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (ws) { try { ws.close(1000); } catch(_){} ws = null; }
+  setStatus('', '대기 중');
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+}
+
+function stopTranslation() { cleanup(); }
+</script>
+
+
+</body></html>
