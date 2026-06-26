@@ -7,65 +7,65 @@
 <title>실시간 번역</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, sans-serif; background: #0f0f0f; color: #f0f0f0; min-height: 100vh; display: flex; flex-direction: column; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, sans-serif; background: #0f0f0f; color: #f0f0f0; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 
-  /* 설정 패널 */
-  .settings { padding: 1rem 1.2rem 0.8rem; border-bottom: 0.5px solid #2a2a2a; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-  .settings-group { display: flex; flex-direction: column; gap: 4px; }
-  .settings-group label { font-size: 11px; color: #666; }
-  input[type="password"] { background: #1c1c1e; border: 0.5px solid #444; border-radius: 8px; color: #f0f0f0; font-size: 14px; padding: 8px 10px; outline: none; width: 220px; }
-  select { background: #1c1c1e; border: 0.5px solid #444; border-radius: 8px; color: #f0f0f0; font-size: 14px; padding: 8px 10px; outline: none; -webkit-appearance: none; appearance: none; }
-  .btn-group { display: flex; gap: 8px; margin-left: auto; align-items: flex-end; }
-  button { padding: 9px 18px; font-size: 14px; font-weight: 500; border-radius: 8px; border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
+  /* 상단 설정 */
+  .settings { padding: 0.7rem 1rem; border-bottom: 0.5px solid #2a2a2a; display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; flex-shrink: 0; }
+  .sg { display: flex; flex-direction: column; gap: 3px; }
+  .sg label { font-size: 11px; color: #555; }
+  input[type="password"] { background: #1c1c1e; border: 0.5px solid #444; border-radius: 8px; color: #f0f0f0; font-size: 14px; padding: 7px 10px; outline: none; width: 200px; }
+  select { background: #1c1c1e; border: 0.5px solid #444; border-radius: 8px; color: #f0f0f0; font-size: 14px; padding: 7px 10px; outline: none; -webkit-appearance: none; }
+  .btns { display: flex; gap: 7px; margin-left: auto; align-items: flex-end; }
+  button { padding: 8px 16px; font-size: 14px; font-weight: 500; border-radius: 8px; border: none; cursor: pointer; white-space: nowrap; }
   #startBtn { background: #0a84ff; color: #fff; }
   #startBtn:disabled { background: #1a3a5c; color: #555; }
-  #stopBtn { background: #1c1c1e; color: #ff453a; border: 0.5px solid #ff453a; }
+  #stopBtn { background: transparent; color: #ff453a; border: 0.5px solid #ff453a; }
   #stopBtn:disabled { opacity: 0.3; }
-  #clearBtn { background: #1c1c1e; color: #888; border: 0.5px solid #444; }
+  #clearBtn { background: transparent; color: #888; border: 0.5px solid #444; }
 
   /* 상태바 */
-  .statusbar { padding: 6px 1.2rem; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; border-bottom: 0.5px solid #1a1a1a; min-height: 30px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: #444; flex-shrink: 0; }
+  .statusbar { padding: 4px 1rem; display: flex; align-items: center; gap: 7px; font-size: 11px; color: #555; border-bottom: 0.5px solid #1a1a1a; flex-shrink: 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: #444; }
   .dot.connected { background: #30d158; }
-  .dot.recording { background: #ff453a; animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-  .error-inline { color: #ff453a; font-size: 12px; margin-left: auto; }
+  .dot.recording { background: #ff453a; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .err { color: #ff453a; margin-left: auto; }
 
-  /* 번역 메인 영역 */
-  .translate-area { flex: 1; display: flex; overflow: hidden; }
+  /* 번역 영역 — 핵심: flex:1 + overflow:hidden 으로 남은 공간 정확히 채움 */
+  .translate-area { flex: 1; display: flex; overflow: hidden; min-height: 0; }
 
-  /* 컬럼 공통 */
-  .col { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-  .col-header { padding: 10px 1.2rem 8px; font-size: 12px; color: #555; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 0.5px solid #1a1a1a; flex-shrink: 0; }
-  .col-body { flex: 1; overflow-y: auto; padding: 1rem 1.2rem; -webkit-overflow-scrolling: touch; }
-  .divider { width: 0.5px; background: #2a2a2a; flex-shrink: 0; }
+  .col { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .col-header { padding: 8px 1rem 6px; font-size: 11px; color: #555; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 0.5px solid #1a1a1a; flex-shrink: 0; }
+  /* col-body가 정해진 공간에서만 스크롤 */
+  .col-body { flex: 1; overflow-y: auto; padding: 0.8rem 1rem; -webkit-overflow-scrolling: touch; min-height: 0; }
 
-  /* 말풍선 스타일 */
-  .bubble-wrap { display: flex; flex-direction: column; gap: 8px; }
-  .bubble { background: #1c1c1e; border-radius: 12px; padding: 10px 14px; font-size: 16px; line-height: 1.65; color: #f0f0f0; word-break: break-word; }
-  .bubble.ko { background: #1a2a1a; }
-  .bubble .ts { display: block; font-size: 10px; color: #555; margin-bottom: 4px; }
+  .divider { width: 0.5px; background: #222; flex-shrink: 0; }
 
-  /* 모바일: 세로 스택 */
-  @media (max-width: 600px) {
-    .settings { flex-direction: column; gap: 8px; }
+  /* 버블 */
+  .bubble { background: #1c1c1e; border-radius: 10px; padding: 10px 13px; font-size: 15px; line-height: 1.7; color: #e8e8e8; word-break: break-word; margin-bottom: 8px; }
+  .bubble.ko { background: #152015; color: #d4f0d4; }
+  .bubble .ts { display: block; font-size: 10px; color: #444; margin-bottom: 4px; }
+
+  /* 모바일 세로: 상하 분할 */
+  @media (max-width: 599px) {
+    .settings { flex-direction: column; }
     input[type="password"] { width: 100%; }
-    .btn-group { margin-left: 0; width: 100%; }
-    .btn-group button { flex: 1; }
+    .btns { margin-left: 0; width: 100%; }
+    .btns button { flex: 1; }
     .translate-area { flex-direction: column; }
     .divider { width: 100%; height: 0.5px; }
-    .col { min-height: 220px; }
   }
 </style>
 </head>
 <body>
 
 <div class="settings">
-  <div class="settings-group">
+  <div class="sg">
     <label>Gemini API Key</label>
     <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off" />
   </div>
-  <div class="settings-group">
+  <div class="sg">
     <label>번역 방향</label>
     <select id="targetLang">
       <option value="ko">영어 → 한국어</option>
@@ -74,7 +74,7 @@
       <option value="zh">영어 → 중국어</option>
     </select>
   </div>
-  <div class="btn-group">
+  <div class="btns">
     <button id="startBtn" onclick="startTranslation()">시작</button>
     <button id="stopBtn" onclick="stopTranslation()" disabled>중지</button>
     <button id="clearBtn" onclick="clearAll()">지우기</button>
@@ -84,122 +84,85 @@
 <div class="statusbar">
   <span class="dot" id="dot"></span>
   <span id="statusText">대기 중</span>
-  <span class="error-inline" id="err"></span>
+  <span class="err" id="err"></span>
 </div>
 
 <div class="translate-area">
   <div class="col">
     <div class="col-header" id="srcLabel">원문 (영어)</div>
-    <div class="col-body" id="srcBox">
-      <div class="bubble-wrap" id="srcBubbles"></div>
-    </div>
+    <div class="col-body" id="srcBox"></div>
   </div>
   <div class="divider"></div>
   <div class="col">
     <div class="col-header" id="dstLabel">번역 (한국어)</div>
-    <div class="col-body" id="dstBox">
-      <div class="bubble-wrap" id="dstBubbles"></div>
-    </div>
+    <div class="col-body" id="dstBox"></div>
   </div>
 </div>
 
 <script>
-let ws = null, stream = null, actx = null, processor = null;
-const SAMPLE_RATE = 16000;
-
+let ws = null, stream = null, actx = null, proc = null;
+const SR = 16000;
 const langNames = { ko:'한국어', en:'영어', ja:'일본어', zh:'중국어' };
 
-function setStatus(type, text) {
-  document.getElementById('dot').className = 'dot' + (type ? ' ' + type : '');
-  document.getElementById('statusText').textContent = text;
+function setStatus(t, txt) {
+  document.getElementById('dot').className = 'dot' + (t ? ' '+t : '');
+  document.getElementById('statusText').textContent = txt;
 }
-function showErr(msg) { document.getElementById('err').textContent = msg; }
-
-function clearAll() {
-  document.getElementById('srcBubbles').innerHTML = '';
-  document.getElementById('dstBubbles').innerHTML = '';
-  showErr('');
-}
+function showErr(m) { document.getElementById('err').textContent = m; }
+function clearAll() { document.getElementById('srcBox').innerHTML = ''; document.getElementById('dstBox').innerHTML = ''; showErr(''); }
 
 function ts() {
-  const now = new Date();
-  return [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':');
+  return new Date().toTimeString().slice(0,8);
 }
 
-// 마지막 버블에 텍스트 추가 (같은 턴이면 이어붙임)
-function appendBubble(containerId, text, cls) {
+// 5초 이내 같은 버블에 이어붙임, 이후엔 새 버블
+function appendBubble(boxId, text, cls) {
   if (!text || !text.trim()) return;
-  const wrap = document.getElementById(containerId);
-  const box = wrap.closest('.col-body');
-
-  // 마지막 버블이 5초 이내면 이어붙임, 아니면 새 버블
-  const last = wrap.lastElementChild;
+  const box = document.getElementById(boxId);
   const now = Date.now();
-  if (last && last.dataset.time && (now - parseInt(last.dataset.time)) < 5000) {
-    const textNode = last.querySelector('.btext');
-    textNode.textContent += ' ' + text.trim();
-    last.dataset.time = now;
+  const last = box.lastElementChild;
+  if (last && last.dataset.t && (now - +last.dataset.t) < 5000) {
+    last.querySelector('.bt').textContent += ' ' + text.trim();
+    last.dataset.t = now;
   } else {
-    const div = document.createElement('div');
-    div.className = 'bubble' + (cls ? ' ' + cls : '');
-    div.dataset.time = now;
-    div.innerHTML = '<span class="ts">' + ts() + '</span><span class="btext">' + text.trim() + '</span>';
-    wrap.appendChild(div);
+    const d = document.createElement('div');
+    d.className = 'bubble' + (cls ? ' '+cls : '');
+    d.dataset.t = now;
+    d.innerHTML = '<span class="ts">'+ts()+'</span><span class="bt">'+text.trim()+'</span>';
+    box.appendChild(d);
   }
   box.scrollTop = box.scrollHeight;
 }
 
 function updateLabels() {
   const lang = document.getElementById('targetLang').value;
-  const srcLang = lang === 'en' ? '한국어' : '영어';
-  const dstLang = langNames[lang] || lang;
-  document.getElementById('srcLabel').textContent = '원문 (' + srcLang + ')';
-  document.getElementById('dstLabel').textContent = '번역 (' + dstLang + ')';
+  const src = lang === 'en' ? '한국어' : '영어';
+  document.getElementById('srcLabel').textContent = '원문 (' + src + ')';
+  document.getElementById('dstLabel').textContent = '번역 (' + (langNames[lang]||lang) + ')';
 }
-
 document.getElementById('targetLang').addEventListener('change', updateLabels);
 
-function f32ToI16(buf) {
-  const out = new Int16Array(buf.length);
-  for (let i = 0; i < buf.length; i++) {
-    const s = Math.max(-1, Math.min(1, buf[i]));
-    out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-  }
-  return out;
+function f32i16(buf) {
+  const o = new Int16Array(buf.length);
+  for (let i=0;i<buf.length;i++) { const s=Math.max(-1,Math.min(1,buf[i])); o[i]=s<0?s*0x8000:s*0x7FFF; }
+  return o;
+}
+function b64(i16) {
+  const b = new Uint8Array(i16.buffer); let s='';
+  for (let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]);
+  return btoa(s);
 }
 
-function toB64(i16) {
-  const bytes = new Uint8Array(i16.buffer);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
-}
-
-async function parseMessage(e) {
-  let text = null;
-  if (typeof e.data === 'string') text = e.data;
-  else if (e.data instanceof Blob) text = await e.data.text();
-  else if (e.data instanceof ArrayBuffer) text = new TextDecoder().decode(e.data);
-  if (!text) return;
-
+async function parse(e) {
+  let txt = typeof e.data==='string' ? e.data : (e.data instanceof Blob ? await e.data.text() : new TextDecoder().decode(e.data));
   try {
-    const d = JSON.parse(text);
-    if (d.serverContent) {
-      const sc = d.serverContent;
-      if (sc.inputTranscription && sc.inputTranscription.text) {
-        appendBubble('srcBubbles', sc.inputTranscription.text, '');
-      }
-      if (sc.outputTranscription && sc.outputTranscription.text) {
-        appendBubble('dstBubbles', sc.outputTranscription.text, 'ko');
-      }
-      // modelTurn text fallback
-      if (sc.modelTurn) {
-        (sc.modelTurn.parts || []).forEach(p => {
-          if (p.text) appendBubble('dstBubbles', p.text, 'ko');
-        });
-      }
-    }
-  } catch(_) {}
+    const d = JSON.parse(txt);
+    const sc = d.serverContent;
+    if (!sc) return;
+    if (sc.inputTranscription?.text) appendBubble('srcBox', sc.inputTranscription.text, '');
+    if (sc.outputTranscription?.text) appendBubble('dstBox', sc.outputTranscription.text, 'ko');
+    (sc.modelTurn?.parts||[]).forEach(p => { if(p.text) appendBubble('dstBox', p.text, 'ko'); });
+  } catch(_){}
 }
 
 async function startTranslation() {
@@ -210,69 +173,45 @@ async function startTranslation() {
   updateLabels();
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      video: false
-    });
-  } catch(e) {
-    showErr('마이크 권한 필요: ' + e.message); return;
-  }
+    stream = await navigator.mediaDevices.getUserMedia({ audio:{sampleRate:SR,channelCount:1,echoCancellation:true,noiseSuppression:true}, video:false });
+  } catch(e) { showErr('마이크 권한 필요: '+e.message); return; }
 
-  setStatus('', '연결 중...');
+  setStatus('','연결 중...');
   document.getElementById('startBtn').disabled = true;
 
-  const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + key;
-  ws = new WebSocket(url);
+  ws = new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key='+key);
   ws.binaryType = 'blob';
 
   ws.onopen = () => {
-    ws.send(JSON.stringify({
-      setup: {
-        model: 'models/gemini-3.5-live-translate-preview',
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          translationConfig: { targetLanguageCode: lang, echoTargetLanguage: false }
-        }
-      }
-    }));
-    setStatus('connected', '연결됨');
+    ws.send(JSON.stringify({ setup:{ model:'models/gemini-3.5-live-translate-preview', generationConfig:{ responseModalities:['AUDIO'], translationConfig:{ targetLanguageCode:lang, echoTargetLanguage:false } } } }));
+    setStatus('connected','연결됨');
     document.getElementById('stopBtn').disabled = false;
-    startMic();
+    actx = new (window.AudioContext||window.webkitAudioContext)({sampleRate:SR});
+    const src = actx.createMediaStreamSource(stream);
+    proc = actx.createScriptProcessor(2048,1,1);
+    proc.onaudioprocess = e => {
+      if (!ws||ws.readyState!==1) return;
+      ws.send(JSON.stringify({ realtimeInput:{ audio:{ data:b64(f32i16(e.inputBuffer.getChannelData(0))), mimeType:'audio/pcm;rate=16000' } } }));
+    };
+    src.connect(proc); proc.connect(actx.destination);
+    setStatus('recording','녹음 중 — 말씀하세요');
   };
 
-  ws.onmessage = (e) => { parseMessage(e); };
-  ws.onerror = () => { showErr('연결 오류. API Key를 확인하세요.'); cleanup(); };
-  ws.onclose = (e) => {
-    if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ') ' + (e.reason || ''));
-    cleanup();
-  };
-}
-
-function startMic() {
-  actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
-  const src = actx.createMediaStreamSource(stream);
-  processor = actx.createScriptProcessor(2048, 1, 1);
-  processor.onaudioprocess = (e) => {
-    if (!ws || ws.readyState !== 1) return;
-    const b64 = toB64(f32ToI16(e.inputBuffer.getChannelData(0)));
-    ws.send(JSON.stringify({ realtimeInput: { audio: { data: b64, mimeType: 'audio/pcm;rate=16000' } } }));
-  };
-  src.connect(processor);
-  processor.connect(actx.destination);
-  setStatus('recording', '녹음 중 — 말씀하세요');
+  ws.onmessage = e => parse(e);
+  ws.onerror = () => { showErr('연결 오류.'); cleanup(); };
+  ws.onclose = e => { if(e.code!==1000) showErr('연결 끊김 ('+e.code+') '+(e.reason||'')); cleanup(); };
 }
 
 function cleanup() {
-  if (processor) { try { processor.disconnect(); } catch(_){} processor = null; }
-  if (actx) { try { actx.close(); } catch(_){} actx = null; }
-  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  if (ws) { try { ws.close(1000); } catch(_){} ws = null; }
-  setStatus('', '대기 중');
-  document.getElementById('startBtn').disabled = false;
-  document.getElementById('stopBtn').disabled = true;
+  if(proc){try{proc.disconnect();}catch(_){} proc=null;}
+  if(actx){try{actx.close();}catch(_){} actx=null;}
+  if(stream){stream.getTracks().forEach(t=>t.stop()); stream=null;}
+  if(ws){try{ws.close(1000);}catch(_){} ws=null;}
+  setStatus('','대기 중');
+  document.getElementById('startBtn').disabled=false;
+  document.getElementById('stopBtn').disabled=true;
 }
-
-function stopTranslation() { cleanup(); }
+function stopTranslation(){cleanup();}
 </script>
 </body>
 </html>
