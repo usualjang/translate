@@ -72,8 +72,6 @@
 <script>
 let ws = null, stream = null, actx = null, processor = null;
 const SAMPLE_RATE = 16000;
-// 100ms @ 16kHz = 1600 samples
-const CHUNK_SIZE = 1600;
 
 function setStatus(type, text) {
   document.getElementById('dot').className = 'dot' + (type ? ' ' + type : '');
@@ -137,13 +135,13 @@ async function startTranslation() {
   ws = new WebSocket(url);
 
   ws.onopen = () => {
+    // inputAudioTranscription / outputAudioTranscription 제거
+    // translationConfig만 사용 (Google gemini-skills 공식 예제 기준)
     ws.send(JSON.stringify({
       setup: {
         model: 'models/gemini-3.5-live-translate-preview',
         generationConfig: {
           responseModalities: ['AUDIO'],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
           translationConfig: {
             targetLanguageCode: lang,
             echoTargetLanguage: false
@@ -161,9 +159,14 @@ async function startTranslation() {
       const d = JSON.parse(e.data);
       const sc = d.serverContent;
       if (!sc) return;
+      // 번역 텍스트 출력 (outputTranscription)
       if (sc.outputTranscription && sc.outputTranscription.text) {
         addText(sc.outputTranscription.text);
       }
+      // 원문 텍스트도 표시하려면 아래 주석 해제
+      // if (sc.inputTranscription && sc.inputTranscription.text) {
+      //   addText('[원문] ' + sc.inputTranscription.text);
+      // }
     } catch(_) {}
   };
 
@@ -177,10 +180,8 @@ async function startTranslation() {
 function startMic() {
   actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
   const src = actx.createMediaStreamSource(stream);
-
-  // ScriptProcessor 크기는 2의 제곱이어야 함 — 2048 samples @ 16kHz = 128ms (100ms에 가장 근접)
+  // 2048 samples @ 16kHz ≈ 128ms (권장 100ms에 근접한 2의 제곱)
   processor = actx.createScriptProcessor(2048, 1, 1);
-
   processor.onaudioprocess = (e) => {
     if (!ws || ws.readyState !== 1) return;
     const b64 = toB64(f32ToI16(e.inputBuffer.getChannelData(0)));
@@ -188,7 +189,6 @@ function startMic() {
       realtimeInput: { audio: { data: b64, mimeType: 'audio/pcm;rate=16000' } }
     }));
   };
-
   src.connect(processor);
   processor.connect(actx.destination);
   setStatus('recording', '녹음 중 — 말씀하세요');
