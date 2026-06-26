@@ -1,7 +1,8 @@
-<!DOCTYPE html>
-<!-- saved from url=(0056)file:///C:/Users/fusio/Downloads/gemini_translate_1.html -->
-<html lang="ko"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>실시간 번역</title>
 <style>
@@ -39,7 +40,7 @@
 
 <div class="card">
   <label>Gemini API Key</label>
-  <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off">
+  <input type="password" id="apiKey" placeholder="AIza..." autocomplete="off" />
   <div class="hint">키는 저장되지 않습니다.</div>
   <label>번역 방향</label>
   <select id="targetLang">
@@ -60,7 +61,7 @@
   </div>
   <div class="btn-row">
     <button id="startBtn" onclick="startTranslation()">시작</button>
-    <button id="stopBtn" onclick="stopTranslation()" disabled="">중지</button>
+    <button id="stopBtn" onclick="stopTranslation()" disabled>중지</button>
     <button id="clearBtn" onclick="clearAll()">지우기</button>
   </div>
   <div class="error" id="err"></div>
@@ -70,6 +71,9 @@
 
 <script>
 let ws = null, stream = null, actx = null, processor = null;
+const SAMPLE_RATE = 16000;
+// 100ms @ 16kHz = 1600 samples
+const CHUNK_SIZE = 1600;
 
 function setStatus(type, text) {
   document.getElementById('dot').className = 'dot' + (type ? ' ' + type : '');
@@ -117,7 +121,10 @@ async function startTranslation() {
   const lang = document.getElementById('targetLang').value;
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true }, video: false });
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: SAMPLE_RATE, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      video: false
+    });
   } catch(e) {
     showErr('마이크 권한 필요: ' + e.message);
     return;
@@ -126,7 +133,6 @@ async function startTranslation() {
   setStatus('', '연결 중...');
   document.getElementById('startBtn').disabled = true;
 
-  // v1beta 사용
   const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + key;
   ws = new WebSocket(url);
 
@@ -163,17 +169,18 @@ async function startTranslation() {
 
   ws.onerror = () => { showErr('연결 오류. API Key를 확인하세요.'); cleanup(); };
   ws.onclose = (e) => {
-    if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ') ' + e.reason);
+    if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ') ' + (e.reason || ''));
     cleanup();
   };
 }
 
 function startMic() {
-  // 16kHz 명시적 지정
-  actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
   const src = actx.createMediaStreamSource(stream);
-  // 약 32ms 청크 (512 samples @ 16kHz)
-  processor = actx.createScriptProcessor(512, 1, 1);
+
+  // ScriptProcessor 크기는 2의 제곱이어야 함 — 2048 samples @ 16kHz = 128ms (100ms에 가장 근접)
+  processor = actx.createScriptProcessor(2048, 1, 1);
+
   processor.onaudioprocess = (e) => {
     if (!ws || ws.readyState !== 1) return;
     const b64 = toB64(f32ToI16(e.inputBuffer.getChannelData(0)));
@@ -181,9 +188,10 @@ function startMic() {
       realtimeInput: { audio: { data: b64, mimeType: 'audio/pcm;rate=16000' } }
     }));
   };
+
   src.connect(processor);
   processor.connect(actx.destination);
-  setStatus('recording', '녹음 중');
+  setStatus('recording', '녹음 중 — 말씀하세요');
 }
 
 function cleanup() {
@@ -198,6 +206,5 @@ function cleanup() {
 
 function stopTranslation() { cleanup(); }
 </script>
-
-
-</body></html>
+</body>
+</html>
