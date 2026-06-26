@@ -131,6 +131,54 @@ function toB64(i16) {
   return btoa(bin);
 }
 
+async function parseMessage(e) {
+  let text = null;
+
+  if (typeof e.data === 'string') {
+    // 문자열인 경우 그냥 파싱
+    text = e.data;
+  } else if (e.data instanceof Blob) {
+    // Blob인 경우 텍스트로 변환
+    text = await e.data.text();
+  } else if (e.data instanceof ArrayBuffer) {
+    // ArrayBuffer인 경우 텍스트로 변환
+    text = new TextDecoder().decode(e.data);
+  }
+
+  if (!text) { addDebug('[unknown type] ' + typeof e.data); return; }
+
+  addDebug('[raw] ' + text.substring(0, 120));
+
+  try {
+    const d = JSON.parse(text);
+    const topKeys = Object.keys(d).join(', ');
+    addDebug('[keys] ' + topKeys);
+
+    if (d.setupComplete) addDebug('[setupComplete] OK', true);
+
+    if (d.serverContent) {
+      const sc = d.serverContent;
+      addDebug('[serverContent keys] ' + Object.keys(sc).join(', '), true);
+
+      if (sc.outputTranscription && sc.outputTranscription.text) {
+        addDebug('[번역] ' + sc.outputTranscription.text, true);
+        addText(sc.outputTranscription.text);
+      }
+      if (sc.inputTranscription && sc.inputTranscription.text) {
+        addDebug('[원문] ' + sc.inputTranscription.text, true);
+      }
+      if (sc.modelTurn) {
+        (sc.modelTurn.parts || []).forEach(p => {
+          if (p.text) { addDebug('[modelTurn.text] ' + p.text, true); addText(p.text); }
+          if (p.inlineData) addDebug('[audio chunk] mime: ' + p.inlineData.mimeType);
+        });
+      }
+    }
+  } catch(err) {
+    addDebug('[parse error] ' + err.message + ' | raw: ' + text.substring(0, 80));
+  }
+}
+
 async function startTranslation() {
   showErr('');
   const key = document.getElementById('apiKey').value.trim();
@@ -152,9 +200,10 @@ async function startTranslation() {
 
   const url = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=' + key;
   ws = new WebSocket(url);
+  ws.binaryType = 'blob'; // 바이너리를 Blob으로 수신
 
   ws.onopen = () => {
-    addDebug('[WS open] 셋업 전송 중...');
+    addDebug('[WS open]');
     ws.send(JSON.stringify({
       setup: {
         model: 'models/gemini-3.5-live-translate-preview',
@@ -172,43 +221,12 @@ async function startTranslation() {
     startMic();
   };
 
-  ws.onmessage = (e) => {
-    try {
-      const d = JSON.parse(e.data);
-      // 전체 키 목록 디버그 출력
-      const topKeys = Object.keys(d).join(', ');
-      addDebug('[msg] 최상위 키: ' + topKeys);
+  ws.onmessage = (e) => { parseMessage(e); };
 
-      if (d.serverContent) {
-        const sc = d.serverContent;
-        const scKeys = Object.keys(sc).join(', ');
-        addDebug('[serverContent] 키: ' + scKeys, true);
-
-        if (sc.outputTranscription) {
-          addDebug('[outputTranscription] ' + JSON.stringify(sc.outputTranscription), true);
-          if (sc.outputTranscription.text) addText(sc.outputTranscription.text);
-        }
-        if (sc.inputTranscription) {
-          addDebug('[inputTranscription] ' + JSON.stringify(sc.inputTranscription), true);
-        }
-        if (sc.modelTurn) {
-          const parts = sc.modelTurn.parts || [];
-          parts.forEach(p => {
-            if (p.text) addDebug('[modelTurn.text] ' + p.text, true);
-            if (p.inlineData) addDebug('[modelTurn.inlineData] mimeType: ' + p.inlineData.mimeType);
-          });
-        }
-      }
-      if (d.setupComplete) addDebug('[setupComplete] 완료');
-    } catch(err) {
-      addDebug('[parse error] ' + err.message);
-    }
-  };
-
-  ws.onerror = () => { showErr('연결 오류. API Key를 확인하세요.'); cleanup(); };
+  ws.onerror = () => { showErr('연결 오류.'); cleanup(); };
   ws.onclose = (e) => {
     if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ') ' + (e.reason || ''));
-    addDebug('[WS close] code: ' + e.code + ' reason: ' + (e.reason || ''));
+    addDebug('[WS close] code:' + e.code);
     cleanup();
   };
 }
