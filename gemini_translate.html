@@ -19,10 +19,14 @@
   .dot.connected { background: #30d158; }
   .dot.recording { background: #ff453a; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-  .transcript-box { background: #111; border: 0.5px solid #333; border-radius: 10px; padding: 1rem; min-height: 200px; max-height: 380px; overflow-y: auto; font-size: 16px; line-height: 1.75; color: #f0f0f0; -webkit-overflow-scrolling: touch; }
+  .transcript-box { background: #111; border: 0.5px solid #333; border-radius: 10px; padding: 1rem; min-height: 160px; max-height: 260px; overflow-y: auto; font-size: 16px; line-height: 1.75; color: #f0f0f0; -webkit-overflow-scrolling: touch; }
+  .debug-box { background: #0a0a0a; border: 0.5px solid #2a2a2a; border-radius: 10px; padding: 0.8rem; min-height: 80px; max-height: 180px; overflow-y: auto; font-size: 11px; line-height: 1.5; color: #666; font-family: monospace; -webkit-overflow-scrolling: touch; margin-top: 10px; }
+  .debug-label { font-size: 11px; color: #444; margin-top: 10px; margin-bottom: 4px; }
   .placeholder { color: #444; font-size: 14px; }
   .entry { margin-bottom: 6px; }
   .entry .ts { font-size: 11px; color: #555; margin-right: 6px; }
+  .dentry { margin-bottom: 3px; word-break: break-all; }
+  .dentry.key { color: #4a9; }
   .btn-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
   button { padding: 12px 8px; font-size: 14px; font-weight: 500; border-radius: 10px; border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   #startBtn { background: #0a84ff; color: #fff; }
@@ -56,9 +60,14 @@
     <span class="dot" id="dot"></span>
     <span id="statusText">대기 중</span>
   </div>
+
   <div class="transcript-box" id="box">
     <span class="placeholder">번역 결과가 여기 표시됩니다.</span>
   </div>
+
+  <div class="debug-label">서버 응답 (디버그)</div>
+  <div class="debug-box" id="debugBox"></div>
+
   <div class="btn-row">
     <button id="startBtn" onclick="startTranslation()">시작</button>
     <button id="stopBtn" onclick="stopTranslation()" disabled>중지</button>
@@ -80,6 +89,7 @@ function setStatus(type, text) {
 function showErr(msg) { document.getElementById('err').textContent = msg; }
 function clearAll() {
   document.getElementById('box').innerHTML = '<span class="placeholder">번역 결과가 여기 표시됩니다.</span>';
+  document.getElementById('debugBox').innerHTML = '';
 }
 
 function addText(text) {
@@ -94,6 +104,15 @@ function addText(text) {
   div.innerHTML = '<span class="ts">' + ts + '</span>' + text;
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
+}
+
+function addDebug(msg, isKey) {
+  const db = document.getElementById('debugBox');
+  const d = document.createElement('div');
+  d.className = 'dentry' + (isKey ? ' key' : '');
+  d.textContent = msg;
+  db.appendChild(d);
+  db.scrollTop = db.scrollHeight;
 }
 
 function f32ToI16(buf) {
@@ -135,8 +154,7 @@ async function startTranslation() {
   ws = new WebSocket(url);
 
   ws.onopen = () => {
-    // inputAudioTranscription / outputAudioTranscription 제거
-    // translationConfig만 사용 (Google gemini-skills 공식 예제 기준)
+    addDebug('[WS open] 셋업 전송 중...');
     ws.send(JSON.stringify({
       setup: {
         model: 'models/gemini-3.5-live-translate-preview',
@@ -157,22 +175,40 @@ async function startTranslation() {
   ws.onmessage = (e) => {
     try {
       const d = JSON.parse(e.data);
-      const sc = d.serverContent;
-      if (!sc) return;
-      // 번역 텍스트 출력 (outputTranscription)
-      if (sc.outputTranscription && sc.outputTranscription.text) {
-        addText(sc.outputTranscription.text);
+      // 전체 키 목록 디버그 출력
+      const topKeys = Object.keys(d).join(', ');
+      addDebug('[msg] 최상위 키: ' + topKeys);
+
+      if (d.serverContent) {
+        const sc = d.serverContent;
+        const scKeys = Object.keys(sc).join(', ');
+        addDebug('[serverContent] 키: ' + scKeys, true);
+
+        if (sc.outputTranscription) {
+          addDebug('[outputTranscription] ' + JSON.stringify(sc.outputTranscription), true);
+          if (sc.outputTranscription.text) addText(sc.outputTranscription.text);
+        }
+        if (sc.inputTranscription) {
+          addDebug('[inputTranscription] ' + JSON.stringify(sc.inputTranscription), true);
+        }
+        if (sc.modelTurn) {
+          const parts = sc.modelTurn.parts || [];
+          parts.forEach(p => {
+            if (p.text) addDebug('[modelTurn.text] ' + p.text, true);
+            if (p.inlineData) addDebug('[modelTurn.inlineData] mimeType: ' + p.inlineData.mimeType);
+          });
+        }
       }
-      // 원문 텍스트도 표시하려면 아래 주석 해제
-      // if (sc.inputTranscription && sc.inputTranscription.text) {
-      //   addText('[원문] ' + sc.inputTranscription.text);
-      // }
-    } catch(_) {}
+      if (d.setupComplete) addDebug('[setupComplete] 완료');
+    } catch(err) {
+      addDebug('[parse error] ' + err.message);
+    }
   };
 
   ws.onerror = () => { showErr('연결 오류. API Key를 확인하세요.'); cleanup(); };
   ws.onclose = (e) => {
     if (e.code !== 1000) showErr('연결 끊김 (code: ' + e.code + ') ' + (e.reason || ''));
+    addDebug('[WS close] code: ' + e.code + ' reason: ' + (e.reason || ''));
     cleanup();
   };
 }
@@ -180,7 +216,6 @@ async function startTranslation() {
 function startMic() {
   actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE });
   const src = actx.createMediaStreamSource(stream);
-  // 2048 samples @ 16kHz ≈ 128ms (권장 100ms에 근접한 2의 제곱)
   processor = actx.createScriptProcessor(2048, 1, 1);
   processor.onaudioprocess = (e) => {
     if (!ws || ws.readyState !== 1) return;
